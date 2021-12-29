@@ -19,9 +19,27 @@ import re
 import torch.nn.functional as F
 import torch
 from .constants import ID_TO_AMINO_ACID, AMINO_ACID_TO_ID, NON_STANDARD_AMINO_ACIDS
+import os
 
 def tokenize_string(sample):
     return tuple(sample.lower().split(' '))
+
+def get_seq_str_in_fasta(sequence, id, escape=False, strip_zeros=False):
+
+        sequence = "".join([s for s in sequence])
+
+        if strip_zeros:
+            sequence = sequence.replace("0", "")
+        header = ""
+        if escape:
+            prefix = "\>"
+        else:
+            prefix = ">"
+
+        return "{}{} {} {}{}".format(prefix, id, header, os.linesep, sequence)
+
+def sequences_str_to_fasta(sequences, id_to_enzyme_class, escape=True, strip_zeros=False):
+    return os.linesep.join([get_seq_str_in_fasta(seq, idx, escape=escape, strip_zeros=strip_zeros) for idx, seq in enumerate(sequences)])
 
 def load_dataset(max_length, max_n_examples, tokenize=False, max_vocab_size=2048, data_dir=''):
     '''Adapted from https://github.com/igul222/improved_wgan_training/blob/master/language_helpers.py'''
@@ -36,7 +54,8 @@ def load_dataset(max_length, max_n_examples, tokenize=False, max_vocab_size=2048
         #path = data_dir+("/training-monolingual.tokenized.shuffled/news.en-{}-of-00100".format(str(i+1).zfill(5)))
         with open(path, 'r') as f:
             for line in f:
-                line = line[:-1]
+                #line = line[:-1]
+                line = line.split(" ")[0].strip()
                 if ~any(ext in line for ext in NON_STANDARD_AMINO_ACIDS):
                     if tokenize:
                         line = tokenize_string(line)
@@ -53,7 +72,14 @@ def load_dataset(max_length, max_n_examples, tokenize=False, max_vocab_size=2048
                         break
         if finished:
             break
+    
+    #### Export to fasta file
+    fasta = sequences_str_to_fasta(lines, id_to_enzyme_class=None, escape=False, strip_zeros=True)
+    query_path = os.path.join("./", "exported_bmdh_single_class.fasta")
+    with open(query_path, "w+") as f:
+        f.write(fasta)
 
+    #### Define character mapping
     np.random.shuffle(lines)
 
     charmap = AMINO_ACID_TO_ID

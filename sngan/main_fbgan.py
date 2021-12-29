@@ -28,11 +28,11 @@ import matplotlib.pyplot as plt
 import utils.language_helpers
 plt.switch_backend('agg')
 import numpy as np
-from models import *
+from fbgan_model import *
 from utils.blast_summary import get_protein_sequences, sequences_to_fasta, get_local_blast_results, update_sequences_with_blast_results, get_stats
 
 class SNGAN_Bio():
-    def __init__(self, batch_size=64, lr=0.0001, num_epochs=80, seq_len = 512, data_dir='../data/bmdh_seq_uniprot_single_class.fasta', \
+    def __init__(self, batch_size=16, lr=0.0001, num_epochs=80, seq_len = 512, data_dir='../data/bmdh_seq_uniprot_single_class.fasta', \
         run_name='test', hidden=512, d_steps = 10, g_steps = 1):
         self.hidden = hidden
         self.batch_size = batch_size
@@ -151,7 +151,8 @@ class SNGAN_Bio():
 
     def train_model(self, load_dir):
         init_epoch = self.load_model(load_dir)
-        total_iterations = 4000
+        n_batches = int(len(self.data)/self.batch_size)
+        total_iterations = n_batches * self.n_epochs
         losses_f = open(self.checkpoint_dir + "losses.txt",'a+')
         d_fake_losses, d_real_losses, grad_penalties = [],[],[]
         G_losses, D_losses, W_dist = [],[],[]
@@ -162,7 +163,6 @@ class SNGAN_Bio():
 
         counter = 0
         for epoch in range(self.n_epochs):
-            n_batches = int(len(self.data)/self.batch_size)
             for idx in range(n_batches):
                 _data = np.array(
                     [[self.charmap[c] for c in l] for l in self.data[idx*self.batch_size:(idx+1)*self.batch_size]],
@@ -207,13 +207,13 @@ class SNGAN_Bio():
         z = to_var(torch.randn(self.batch_size, 128))
         self.G.eval()
         torch_seqs = self.G(z)
+        print("Output shape: ", torch_seqs.shape)
         seqs = (torch_seqs.data).cpu().numpy()
         decoded_seqs = [decode_one_seq(seq, self.inv_charmap)+"\n" for seq in seqs]
         with open(self.sample_dir + "sampled_{}.txt".format(epoch), 'w+') as f:
             f.writelines(decoded_seqs)
         
         #### BLAST calculation
-        strip_zeros = True
         sequences = get_protein_sequences(decoded_seqs)
         fasta = sequences_to_fasta(sequences, id_to_enzyme_class=None, escape=False, strip_zeros=True)
         result, err = get_local_blast_results("./", "db/db_train", fasta)

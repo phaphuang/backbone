@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 from torch.nn.utils import spectral_norm
 
-from gen_layer import *
-from disc_layer import Self_Attn
+from .gen_layer import *
+from .disc_layer import Self_Attn
         
 
 class ResnetGenerator(nn.Module):

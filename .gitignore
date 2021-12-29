@@ -2,3 +2,7 @@ bk
 data/protein
 *.pyc
 *__pycache__
+checkpoint
+samples
+sngan/db
+sngan/fasta.fasta

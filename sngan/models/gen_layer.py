@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.nn import Parameter
 from torch import Tensor
 
-from disc_layer import snconv2d
+from .disc_layer import snconv2d
 
 class sn_block(nn.Module):
     def __init__(self, nch_in, nch_out, kernel_size=4, stride=1, padding=1, bias=True, snorm=False):
