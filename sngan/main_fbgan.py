@@ -29,10 +29,11 @@ import utils.language_helpers
 plt.switch_backend('agg')
 import numpy as np
 from models import *
+from utils.blast_summary import get_protein_sequences, sequences_to_fasta, get_local_blast_results, update_sequences_with_blast_results, get_stats
 
 class SNGAN_Bio():
-    def __init__(self, batch_size=16, lr=0.0001, num_epochs=80, seq_len = 512, data_dir='../data/bmdh_seq_uniprot_single_class.fasta', \
-        run_name='test', hidden=512, d_steps = 1, g_steps = 1):
+    def __init__(self, batch_size=64, lr=0.0001, num_epochs=80, seq_len = 512, data_dir='../data/bmdh_seq_uniprot_single_class.fasta', \
+        run_name='test', hidden=512, d_steps = 10, g_steps = 1):
         self.hidden = hidden
         self.batch_size = batch_size
         self.lr = lr
@@ -55,8 +56,8 @@ class SNGAN_Bio():
         if self.use_cuda:
             self.G.cuda()
             self.D.cuda()
-        print(self.G)
-        print(self.D)
+        #print(self.G)
+        #print(self.D)
         self.G_optimizer = optim.Adam(self.G.parameters(), lr=self.lr, betas=(0.5, 0.9))
         self.D_optimizer = optim.Adam(self.D.parameters(), lr=self.lr, betas=(0.5, 0.9))
 
@@ -210,6 +211,25 @@ class SNGAN_Bio():
         decoded_seqs = [decode_one_seq(seq, self.inv_charmap)+"\n" for seq in seqs]
         with open(self.sample_dir + "sampled_{}.txt".format(epoch), 'w+') as f:
             f.writelines(decoded_seqs)
+        
+        #### BLAST calculation
+        strip_zeros = True
+        sequences = get_protein_sequences(decoded_seqs)
+        fasta = sequences_to_fasta(sequences, id_to_enzyme_class=None, escape=False, strip_zeros=True)
+        result, err = get_local_blast_results("./", "db/db_train", fasta)
+
+        sequences, evalues, similarities, identities = update_sequences_with_blast_results(result, sequences)
+        #print("Evalues: ", evalues)
+        #print("Similarities: ", similarities)
+        #print("Identities: ", identities)
+
+        avg_similarities, s_max = get_stats(len(sequences), similarities, "{}/BLOMSUM45".format("train"), np.max)
+        avg_evalues, e_min = get_stats(len(evalues), evalues, "{}/Evalue".format("train"), np.min)
+        avg_identities, i_max = get_stats(len(identities), identities, "{}/Identity".format("train"), np.max)
+
+        template = " BLAST: BLOMSUM45: {:.2f}({:.2f}) | E.value: {:.3f}({:.3f}) | Identity: {:.2f}({:.2f})".format(avg_similarities, s_max, avg_evalues, e_min, avg_identities, i_max)
+        print(template)
+
         self.G.train()
 
 def main():

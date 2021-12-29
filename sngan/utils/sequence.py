@@ -1,6 +1,6 @@
 import os
 
-from common_bio.constants import ID_TO_AMINO_ACID
+from .constants import ID_TO_AMINO_ACID
 
 
 class Sequence(object):
