@@ -149,12 +149,12 @@ class sn_block(nn.Module):
             snconv2d(nch_in=nch_in, nch_out=nch_out, kernel_size=kernel_size, stride=stride, padding=padding, bias=bias, snorm=snorm),
             nn.ReLU(inplace=True),
             snconv2d(nch_in=nch_out, nch_out=nch_out, kernel_size=kernel_size, stride=stride, padding=padding, bias=bias, snorm=snorm),
-            nn.AvgPool2d((2,1),(2,1)),
+            nn.AdaptiveAvgPool2d((2,1)),
         )
 
         self.downsample = nn.Sequential(
             snconv2d(nch_in=nch_in, nch_out=nch_out, kernel_size=kernel_size, stride=stride, padding=padding, bias=bias, snorm=snorm),
-            nn.AvgPool2d((2,1),(2,1)),
+            nn.AdaptiveAvgPool2d((2,1)),
         )
     
     def forward(self, x):
