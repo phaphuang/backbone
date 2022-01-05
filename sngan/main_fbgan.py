@@ -1,4 +1,3 @@
-%%writefile main_fbgan.py
 #    Copyright (C) 2018 Anvita Gupta
 #
 #    This program is free software: you can redistribute it and/or  modify
