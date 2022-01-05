@@ -1,3 +1,4 @@
+%%writefile main_fbgan.py
 #    Copyright (C) 2018 Anvita Gupta
 #
 #    This program is free software: you can redistribute it and/or  modify
@@ -31,9 +32,12 @@ import numpy as np
 from fbgan_model import *
 from utils.blast_summary import get_protein_sequences, sequences_to_fasta, get_local_blast_results, update_sequences_with_blast_results, get_stats
 
+blast_path = "/content/drive/MyDrive/ECUST/Projects/ProteinGAN/results/mdh/fbgan"
+f_log_name = "fbgan_blomsum45.log"
+
 class SNGAN_Bio():
-    def __init__(self, batch_size=16, lr=0.0001, num_epochs=80, seq_len = 512, data_dir='../data/bmdh_seq_uniprot_single_class.fasta', \
-        run_name='test', hidden=512, d_steps = 10, g_steps = 1):
+    def __init__(self, batch_size=64, lr=0.0001, num_epochs=2000, seq_len = 512, data_dir='../data/bmdh_seq_uniprot_single_class.fasta', \
+        run_name='test', hidden=512, d_steps = 5, g_steps = 1):
         self.hidden = hidden
         self.batch_size = batch_size
         self.lr = lr
@@ -42,8 +46,10 @@ class SNGAN_Bio():
         self.d_steps = d_steps
         self.g_steps = g_steps
         self.lamda = 10 #lambda
-        self.checkpoint_dir = './checkpoint/' + run_name + "/"
-        self.sample_dir = './samples/' + run_name + "/"
+        #self.checkpoint_dir = './checkpoint/' + run_name + "/"
+        self.checkpoint_dir = blast_path + "/checkpoint/"
+        #self.sample_dir = './samples/' + run_name + "/"
+        self.sample_dir = blast_path + '/samples/'
         self.load_data(data_dir)
         if not os.path.exists(self.checkpoint_dir): os.makedirs(self.checkpoint_dir)
         if not os.path.exists(self.sample_dir): os.makedirs(self.sample_dir)
@@ -161,7 +167,11 @@ class SNGAN_Bio():
         one_hot = OneHotEncoder()
         one_hot.fit(table)
 
-        counter = 0
+        if init_epoch:
+          counter = init_epoch + 1
+        else:
+          counter = 0
+  
         for epoch in range(self.n_epochs):
             for idx in range(n_batches):
                 _data = np.array(
@@ -187,15 +197,15 @@ class SNGAN_Bio():
                     g_err = self.gen_train_iteration()
                     G_losses.append((g_err.data).cpu().numpy())
 
-                if counter % 100 == 99:
+                if counter % 1200 == 1199:
                     self.save_model(counter)
-                    self.sample(counter)
+                    self.sample(counter, total_iterations)
                 if counter % 10 == 9:
                     summary_str = 'Iteration [{}/{}] - loss_d: {}, loss_g: {}, w_dist: {}, grad_penalty: {}'\
                         .format(counter, total_iterations, (d_err.data).cpu().numpy(),
                         (g_err.data).cpu().numpy(), ((d_real_err - d_fake_err).data).cpu().numpy(), gp_np)
                     print(summary_str)
-                    losses_f.write(summary_str)
+                    losses_f.write(summary_str + "\n")
                     plot_losses([G_losses, D_losses], ["gen", "disc"], self.sample_dir + "losses.png")
                     plot_losses([W_dist], ["w_dist"], self.sample_dir + "dist.png")
                     plot_losses([grad_penalties],["grad_penalties"], self.sample_dir + "grad.png")
@@ -203,20 +213,20 @@ class SNGAN_Bio():
                 counter += 1
             np.random.shuffle(self.data)
 
-    def sample(self, epoch):
+    def sample(self, step, total_steps):
         z = to_var(torch.randn(self.batch_size, 128))
         self.G.eval()
         torch_seqs = self.G(z)
-        print("Output shape: ", torch_seqs.shape)
         seqs = (torch_seqs.data).cpu().numpy()
         decoded_seqs = [decode_one_seq(seq, self.inv_charmap)+"\n" for seq in seqs]
-        with open(self.sample_dir + "sampled_{}.txt".format(epoch), 'w+') as f:
+        with open(self.sample_dir + "sampled_{}.txt".format(step), 'w+') as f:
             f.writelines(decoded_seqs)
         
         #### BLAST calculation
         sequences = get_protein_sequences(decoded_seqs)
         fasta = sequences_to_fasta(sequences, id_to_enzyme_class=None, escape=False, strip_zeros=True)
-        result, err = get_local_blast_results("./", "db/db_train", fasta)
+        result, err = get_local_blast_results(blast_path, "db/db_train", fasta)
+        #print("Results: ", result)
 
         sequences, evalues, similarities, identities = update_sequences_with_blast_results(result, sequences)
         #print("Evalues: ", evalues)
@@ -227,8 +237,15 @@ class SNGAN_Bio():
         avg_evalues, e_min = get_stats(len(evalues), evalues, "{}/Evalue".format("train"), np.min)
         avg_identities, i_max = get_stats(len(identities), identities, "{}/Identity".format("train"), np.max)
 
-        template = " BLAST: BLOMSUM45: {:.2f}({:.2f}) | E.value: {:.3f}({:.3f}) | Identity: {:.2f}({:.2f})".format(avg_similarities, s_max, avg_evalues, e_min, avg_identities, i_max)
+        template = "Iteration [{}/{}] BLAST: BLOMSUM45: {:.2f}({:.2f}) {} | " \
+                  "E.value: {:.3f}({:.3f}) {} | Identity: {:.2f}({:.2f}) {}".format(step, total_steps, avg_similarities, s_max, similarities,
+                                                                                   avg_evalues, e_min, evalues, 
+                                                                                   avg_identities, i_max, identities)
         print(template)
+        
+        f_template = open(os.path.join(blast_path, f_log_name), 'a')
+        f_template.write(template + "\n")
+        f_template.close()
 
         self.G.train()
 

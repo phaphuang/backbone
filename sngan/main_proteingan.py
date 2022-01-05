@@ -1,3 +1,4 @@
+%%writefile main_proteingan.py
 #    Copyright (C) 2018 Anvita Gupta
 #
 #    This program is free software: you can redistribute it and/or  modify
@@ -36,8 +37,12 @@ from utils.blast_summary import get_protein_sequences, sequences_to_fasta, get_l
 #### Higne Loss src: https://github.com/heykeetae/Self-Attention-GAN/blob/8714a54ba5027d680190791ba3a6bb08f9c9a129/trainer.py
 #### Non saturate loss src: https://github.com/SiskonEmilia/StyleGAN-PyTorch/blob/master/train.py
 
+blast_path = "/content/drive/MyDrive/ECUST/Projects/ProteinGAN/results/mdh/proteingan"
+f_log_name = "proteingan_blomsum45.log"
+#f_loss_name = "protein_gan_loss.log"
+
 class SNGAN_Bio():
-    def __init__(self, batch_size=64, lr=0.001, num_epochs=2000, seq_len = 512, data_dir='../data/bmdh_seq_uniprot_single_class.fasta', \
+    def __init__(self, batch_size=64, lr=0.0001, num_epochs=2000, seq_len = 512, data_dir='../data/bmdh_seq_uniprot_single_class.fasta', \
         run_name='test', hidden=512, d_steps = 1, g_steps = 1):
         self.hidden = hidden
         self.batch_size = batch_size
@@ -46,8 +51,10 @@ class SNGAN_Bio():
         self.seq_len = seq_len
         self.d_steps = d_steps
         self.g_steps = g_steps
-        self.checkpoint_dir = './checkpoint/' + run_name + "/"
-        self.sample_dir = './samples/' + run_name + "/"
+        #self.checkpoint_dir = './checkpoint/' + run_name + "/"
+        self.checkpoint_dir = blast_path + "/checkpoint/"
+        #self.sample_dir = './samples/' + run_name + "/"
+        self.sample_dir = blast_path + '/samples/'
         self.load_data(data_dir)
         if not os.path.exists(self.checkpoint_dir): os.makedirs(self.checkpoint_dir)
         if not os.path.exists(self.sample_dir): os.makedirs(self.sample_dir)
@@ -105,11 +112,14 @@ class SNGAN_Bio():
         
         d_fake_pred = self.D(fake_data)
         #d_fake_err = nn.ReLU()(1.0 + d_fake_pred).mean()
-        d_fake_err = nn.functional.softplus(d_fake_pred).mean()
+        #d_fake_err = nn.functional.softplus(d_fake_pred).mean()
         
         d_real_pred = self.D(real_data)
         #d_real_err = nn.ReLU()(1.0 - d_real_pred).mean()
-        d_real_err = nn.functional.softplus(-d_real_pred).mean()
+        #d_real_err = nn.functional.softplus(-d_real_pred).mean()
+
+        d_real_err = nn.functional.softplus(d_fake_pred).mean()
+        d_fake_err = nn.functional.softplus(-d_real_pred).mean()
 
         grad_real = torch.autograd.grad(outputs=d_real_pred.sum(), inputs=real_data, create_graph=True)[0]
         r1_penalty = (grad_real.view(grad_real.size(0), -1).norm(2, dim=1) ** 2).mean()
@@ -184,22 +194,22 @@ class SNGAN_Bio():
                     g_err = self.gen_train_iteration()
                     G_losses.append((g_err.data).cpu().numpy())
 
-                if counter % 10000 == 9999:
+                if counter % 1200 == 1199:
                     self.save_model(counter)
-                    self.sample(counter)
+                    self.sample(counter, total_iterations)
                 if counter % 10 == 9:
                     summary_str = 'Iteration [{}/{}] - loss_d: {}, loss_g: {}, w_dist: {}'\
                         .format(counter, total_iterations, (d_err.data).cpu().numpy(),
                         (g_err.data).cpu().numpy(), ((d_real_err - d_fake_err).data).cpu().numpy())
                     print(summary_str)
-                    losses_f.write(summary_str)
+                    losses_f.write(summary_str + "\n")
                     plot_losses([G_losses, D_losses], ["gen", "disc"], self.sample_dir + "losses.png")
                     plot_losses([W_dist], ["w_dist"], self.sample_dir + "dist.png")
                     plot_losses([d_fake_losses, d_real_losses],["d_fake", "d_real"], self.sample_dir + "d_loss_components.png")
                 counter += 1
             np.random.shuffle(self.data)
 
-    def sample(self, epoch):
+    def sample(self, step, total_steps):
         z = to_var(torch.randn(self.batch_size, 128))
         self.G.eval()
         torch_seqs = self.G(z)
@@ -207,29 +217,36 @@ class SNGAN_Bio():
         #torch_seqs = torch.squeeze(torch.argmax(torch_seqs, dim=-1))
         seqs = (torch_seqs.data).cpu().numpy()
         decoded_seqs = [decode_one_seq(seq, self.inv_charmap)+"\n" for seq in seqs]
-        with open(self.sample_dir + "sampled_{}.txt".format(epoch), 'w+') as f:
+        with open(self.sample_dir + "sampled_{}.txt".format(step), 'w+') as f:
             f.writelines(decoded_seqs)
 
         #### BLAST calculation
         sequences = get_protein_sequences(decoded_seqs)
         fasta = sequences_to_fasta(sequences, id_to_enzyme_class=None, escape=False, strip_zeros=True)
-        result, err = get_local_blast_results("./", "db/db_train", fasta)
+        result, err = get_local_blast_results(blast_path, "db/db_train", fasta)
 
         #print("Decoded seq: ", decoded_seqs)
-        #print("Results: ", result, "Error: ", err)
+        #print("Results: ", result)
 
         sequences, evalues, similarities, identities = update_sequences_with_blast_results(result, sequences)
 
-        print("Evalues: ", evalues)
-        print("Similarities: ", similarities)
-        print("Identities: ", identities)
+        #print("Evalues: ", evalues)
+        #print("Similarities: ", similarities)
+        #print("Identities: ", identities)
 
         avg_similarities, s_max = get_stats(len(sequences), similarities, "{}/BLOMSUM45".format("train"), np.max)
         avg_evalues, e_min = get_stats(len(evalues), evalues, "{}/Evalue".format("train"), np.min)
         avg_identities, i_max = get_stats(len(identities), identities, "{}/Identity".format("train"), np.max)
 
-        template = " BLAST: BLOMSUM45: {:.2f}({:.2f}) | E.value: {:.3f}({:.3f}) | Identity: {:.2f}({:.2f})".format(avg_similarities, s_max, avg_evalues, e_min, avg_identities, i_max)
+        template = "Iteration [{}/{}] BLAST: BLOMSUM45: {:.2f}({:.2f}) {} | " \
+                  "E.value: {:.3f}({:.3f}) {} | Identity: {:.2f}({:.2f}) {}".format(step, total_steps, avg_similarities, s_max, similarities,
+                                                                                   avg_evalues, e_min, evalues, 
+                                                                                   avg_identities, i_max, identities)
         print(template)
+        
+        f_template = open(os.path.join(blast_path, f_log_name), 'a')
+        f_template.write(template + "\n")
+        f_template.close()
 
         self.G.train()
 
